@@ -11,7 +11,7 @@
 %% The Original Code is RabbitMQ.
 %%
 %% The Initial Developer of the Original Code is GoPivotal, Inc.
-%% Copyright (c) 2007-2016 Pivotal Software, Inc.  All rights reserved.
+%% Copyright (c) 2007-2017 Pivotal Software, Inc.  All rights reserved.
 %%
 
 %% @private
@@ -63,10 +63,10 @@ signal_connection_closing(ChMgr, ChannelCloseType, Reason) ->
 process_channel_frame(Frame, Channel, ChPid, AState) ->
     case rabbit_command_assembler:process(Frame, AState) of
         {ok, NewAState}                  -> NewAState;
-        {ok, Method, NewAState}          -> rabbit_channel:do(ChPid, Method),
+        {ok, Method, NewAState}          -> rabbit_channel_common:do(ChPid, Method),
                                             NewAState;
-        {ok, Method, Content, NewAState} -> rabbit_channel:do(ChPid, Method,
-                                                              Content),
+        {ok, Method, Content, NewAState} -> rabbit_channel_common:do(ChPid, Method,
+                                                                     Content),
                                             NewAState;
         {error, Reason}                  -> ChPid ! {channel_exit, Channel,
                                                      Reason},
