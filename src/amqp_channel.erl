@@ -11,7 +11,7 @@
 %% The Original Code is RabbitMQ.
 %%
 %% The Initial Developer of the Original Code is GoPivotal, Inc.
-%% Copyright (c) 2007-2016 Pivotal Software, Inc.  All rights reserved.
+%% Copyright (c) 2007-2017 Pivotal Software, Inc.  All rights reserved.
 %%
 
 %% @type close_reason(Type) = {shutdown, amqp_reason(Type)}.
@@ -103,7 +103,7 @@
                 %% true | false, only relevant in the direct
                 %% client case.
                 %% when true, consumers will manually notify
-                %% queue pids using rabbit_amqqueue:notify_sent/2
+                %% queue pids using rabbit_amqqueue_common:notify_sent/2
                 %% to prevent the queue from overwhelming slow
                 %% consumers that use automatic acknowledgement
                 %% mode.
@@ -425,7 +425,7 @@ handle_cast(enable_delivery_flow_control, State) ->
     {noreply, State#state{delivery_flow_control = true}};
 %% @private
 handle_cast({send_notify, {QPid, ChPid}}, State) ->
-    rabbit_amqqueue:notify_sent(QPid, ChPid),
+    rabbit_amqqueue_common:notify_sent(QPid, ChPid),
     {noreply, State};
 %% @private
 handle_cast({cast, Method, AmqpMsg, Sender, noflow}, State) ->
@@ -489,7 +489,7 @@ handle_info({send_command_and_notify, QPid, ChPid,
             State = #state{delivery_flow_control = MFC}) ->
     case MFC of
         false -> handle_method_from_server(Method, Content, State),
-                 rabbit_amqqueue:notify_sent(QPid, ChPid);
+                 rabbit_amqqueue_common:notify_sent(QPid, ChPid);
         true  -> handle_method_from_server(Method, Content,
                                            {self(), QPid, ChPid}, State)
     end,
@@ -500,7 +500,7 @@ handle_info({channel_exit, _ChNumber, Reason}, State) ->
     handle_channel_exit(Reason, State);
 %% This comes from rabbit_channel in the direct case
 handle_info({channel_closing, ChPid}, State) ->
-    ok = rabbit_channel:ready_for_close(ChPid),
+    ok = rabbit_channel_common:ready_for_close(ChPid),
     {noreply, State};
 %% @private
 handle_info({bump_credit, Msg}, State) ->
@@ -512,25 +512,34 @@ handle_info(timed_out_flushing_channel, State) ->
               "connection closing~n", [self()]),
     {stop, timed_out_flushing_channel, State};
 %% @private
+handle_info({'DOWN', _, process, ReturnHandler, shutdown},
+            State = #state{return_handler = {ReturnHandler, _Ref}}) ->
+    {noreply, State#state{return_handler = none}};
 handle_info({'DOWN', _, process, ReturnHandler, Reason},
             State = #state{return_handler = {ReturnHandler, _Ref}}) ->
     ?LOG_WARN("Channel (~p): Unregistering return handler ~p because it died. "
               "Reason: ~p~n", [self(), ReturnHandler, Reason]),
     {noreply, State#state{return_handler = none}};
 %% @private
+handle_info({'DOWN', _, process, ConfirmHandler, shutdown},
+            State = #state{confirm_handler = {ConfirmHandler, _Ref}}) ->
+    {noreply, State#state{confirm_handler = none}};
 handle_info({'DOWN', _, process, ConfirmHandler, Reason},
             State = #state{confirm_handler = {ConfirmHandler, _Ref}}) ->
     ?LOG_WARN("Channel (~p): Unregistering confirm handler ~p because it died. "
               "Reason: ~p~n", [self(), ConfirmHandler, Reason]),
     {noreply, State#state{confirm_handler = none}};
 %% @private
+handle_info({'DOWN', _, process, FlowHandler, shutdown},
+            State = #state{flow_handler = {FlowHandler, _Ref}}) ->
+    {noreply, State#state{flow_handler = none}};
 handle_info({'DOWN', _, process, FlowHandler, Reason},
             State = #state{flow_handler = {FlowHandler, _Ref}}) ->
     ?LOG_WARN("Channel (~p): Unregistering flow handler ~p because it died. "
               "Reason: ~p~n", [self(), FlowHandler, Reason]),
     {noreply, State#state{flow_handler = none}};
 handle_info({'DOWN', _, process, QPid, _Reason}, State) ->
-    rabbit_amqqueue:notify_sent_queue_down(QPid),
+    rabbit_amqqueue_common:notify_sent_queue_down(QPid),
     {noreply, State};
 handle_info({confirm_timeout, From}, State = #state{waiting_set = WSet}) ->
     case gb_trees:lookup(From, WSet) of
@@ -855,9 +864,9 @@ do(Method, Content, Flow, #state{driver = network, writer = W}) ->
 do(Method, Content, Flow, #state{driver = direct, writer = W}) ->
     %% ditto catching because...
     catch case {Content, Flow} of
-              {none, _}      -> rabbit_channel:do(W, Method);
-              {_,    flow}   -> rabbit_channel:do_flow(W, Method, Content);
-              {_,    noflow} -> rabbit_channel:do(W, Method, Content)
+              {none, _}      -> rabbit_channel_common:do(W, Method);
+              {_,    flow}   -> rabbit_channel_common:do_flow(W, Method, Content);
+              {_,    noflow} -> rabbit_channel_common:do(W, Method, Content)
           end.
 
 
@@ -872,13 +881,13 @@ flush_writer(#state{driver = direct}) ->
 amqp_msg(none) ->
     none;
 amqp_msg(Content) ->
-    {Props, Payload} = rabbit_basic:from_content(Content),
+    {Props, Payload} = rabbit_basic_common:from_content(Content),
     #amqp_msg{props = Props, payload = Payload}.
 
 build_content(none) ->
     none;
 build_content(#amqp_msg{props = Props, payload = Payload}) ->
-    rabbit_basic:build_content(Props, Payload).
+    rabbit_basic_common:build_content(Props, Payload).
 
 check_block(_Method, _AmqpMsg, #state{closing = {just_channel, _}}) ->
     closing;
